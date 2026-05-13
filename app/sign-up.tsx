@@ -51,7 +51,7 @@ export default function SignUpScreen() {
     const emailOk = validateEmail(email);
     const passwordOk = validatePassword(password);
     if (!emailOk || !passwordOk || !termsAccepted) return;
-    // TODO: call auth API
+    router.replace("/home");
   }
 
   return (

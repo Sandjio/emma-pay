@@ -18,6 +18,19 @@ export const Colors = {
     hint: '#6B7280',
     background: '#FFFFFF',
     divider: '#E5E7EB',
+    surface: '#F4F5F9',
+    positive: '#16A34A',
+  },
+  quickAction: {
+    topUp: { bg: '#EEF2FF', icon: '#4F46E5' },
+    send: { bg: '#F3E8FF', icon: '#9333EA' },
+    withdraw: { bg: '#DCFCE7', icon: '#16A34A' },
+    request: { bg: '#FFEDD5', icon: '#EA580C' },
+  },
+  transaction: {
+    music: { bg: '#DCFCE7', icon: '#16A34A' },
+    sent: { bg: '#DBEAFE', icon: '#2563EB' },
+    topUp: { bg: '#DCFCE7', icon: '#16A34A' },
   },
 } as const;
 

@@ -55,7 +55,7 @@ export default function LogInScreen() {
     const emailOk = validateEmail(email);
     const passwordOk = validatePassword(password);
     if (!emailOk || !passwordOk) return;
-    // TODO: call auth API
+    router.replace("/home");
   }
 
   return (
