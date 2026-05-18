@@ -14,6 +14,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ApiError, auth } from "./lib/api";
+import { saveToken } from "./lib/auth-storage";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -27,6 +29,8 @@ export default function SignUpScreen() {
   const [passwordError, setPasswordError] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
 
   function validateEmail(value: string) {
     if (!EMAIL_REGEX.test(value)) {
@@ -46,12 +50,35 @@ export default function SignUpScreen() {
     return true;
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
+    setFormError("");
     const emailOk = validateEmail(email);
     const passwordOk = validatePassword(password);
-    if (!emailOk || !passwordOk || !termsAccepted) return;
-    router.replace("/home");
+    if (!emailOk || !passwordOk || !termsAccepted || !name.trim()) {
+      if (!name.trim()) setFormError("Please enter your full name.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { token } = await auth.signup({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+      });
+      await saveToken(token);
+      router.replace("/home");
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "EMAIL_TAKEN") {
+        setEmailError("An account with this email already exists");
+      } else if (err instanceof ApiError) {
+        setFormError(err.message);
+      } else {
+        setFormError("Something went wrong. Please try again.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -139,10 +166,12 @@ export default function SignUpScreen() {
             </Text>
           </TouchableOpacity>
 
+          {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+
           <PrimaryButton
-            label="Create account"
+            label={submitting ? "Creating account…" : "Create account"}
             onPress={handleSubmit}
-            disabled={!termsAccepted}
+            disabled={!termsAccepted || submitting}
           />
 
           <View style={styles.footer}>
@@ -223,6 +252,11 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 14,
     color: Colors.neutral.hint,
+  },
+  formError: {
+    fontSize: 13,
+    color: "#D14343",
+    marginTop: -8,
   },
   logoRow: {
     flexDirection: "row",

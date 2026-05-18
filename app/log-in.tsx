@@ -20,6 +20,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ApiError, auth } from "./lib/api";
+import { saveToken } from "./lib/auth-storage";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -31,6 +33,8 @@ export default function LogInScreen() {
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
 
   function validateEmail(value: string) {
     if (!EMAIL_REGEX.test(value)) {
@@ -50,12 +54,29 @@ export default function LogInScreen() {
     return true;
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setSubmitted(true);
+    setFormError("");
     const emailOk = validateEmail(email);
     const passwordOk = validatePassword(password);
     if (!emailOk || !passwordOk) return;
-    router.replace("/home");
+
+    setSubmitting(true);
+    try {
+      const { token } = await auth.login({ email: email.trim(), password });
+      await saveToken(token);
+      router.replace("/home");
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "INVALID_CREDENTIALS") {
+        setFormError("Invalid email or password.");
+      } else if (err instanceof ApiError) {
+        setFormError(err.message);
+      } else {
+        setFormError("Something went wrong. Please try again.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -123,7 +144,13 @@ export default function LogInScreen() {
             </View>
           </View>
 
-          <PrimaryButton label="Log in" onPress={handleSubmit} />
+          {formError ? <Text style={styles.formError}>{formError}</Text> : null}
+
+          <PrimaryButton
+            label={submitting ? "Logging in…" : "Log in"}
+            onPress={handleSubmit}
+            disabled={submitting}
+          />
 
           <View style={styles.orRow}>
             <View style={styles.dividerLine} />
@@ -205,5 +232,10 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 14,
     color: Colors.neutral.hint,
+  },
+  formError: {
+    fontSize: 13,
+    color: "#D14343",
+    marginTop: -8,
   },
 });

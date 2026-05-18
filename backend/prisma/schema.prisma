@@ -1,0 +1,86 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  cards        Card[]
+  transactions Transaction[]
+  contacts     Contact[]
+}
+
+enum CardType {
+  VIRTUAL
+  PHYSICAL
+}
+
+enum CardVariant {
+  BLUE
+  PURPLE
+  GREEN
+  OBSIDIAN
+}
+
+model Card {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      CardType
+  currency  String      @default("USD")
+  balance   Decimal     @default(0) @db.Decimal(18, 2)
+  lastFour  String
+  variant   CardVariant @default(BLUE)
+  createdAt DateTime    @default(now())
+
+  @@index([userId])
+}
+
+enum TxnType {
+  SEND
+  RECEIVE
+  TOPUP
+  WITHDRAW
+}
+
+enum TxnStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model Transaction {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type             TxnType
+  amount           Decimal   @db.Decimal(18, 2)
+  currency         String    @default("USD")
+  counterpartyName String?
+  status           TxnStatus @default(COMPLETED)
+  createdAt        DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Contact {
+  id          String @id @default(cuid())
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  handle      String
+  initials    String
+  accentColor String
+
+  @@index([userId])
+}
