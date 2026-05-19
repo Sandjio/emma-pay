@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { ApiError, ApiUser, auth } from "./api";
 import { clearToken, getToken, saveToken } from "./auth-storage";
+import { requestNotificationPermission } from "./notifications";
 import { queryClient } from "./queryClient";
 
 type AuthStatus = "loading" | "authed" | "anon";
@@ -60,6 +61,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (status === "authed") {
+      requestNotificationPermission().catch(() => {});
+    }
+  }, [status]);
+
   const signIn = useCallback(async (nextToken: string, nextUser: ApiUser) => {
     await saveToken(nextToken);
     setToken(nextToken);
@@ -91,10 +98,7 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
-export function useAuthToken(): string {
+export function useAuthToken(): string | null {
   const { token } = useAuth();
-  if (!token) {
-    throw new Error("useAuthToken called without an authenticated session");
-  }
   return token;
 }

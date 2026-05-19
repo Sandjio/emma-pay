@@ -7,6 +7,7 @@ export function useContactsQuery() {
   const token = useAuthToken();
   return useQuery({
     queryKey: queryKeys.contacts,
-    queryFn: () => contactsApi.list(token).then((r) => r.contacts),
+    queryFn: () => contactsApi.list(token!).then((r) => r.contacts),
+    enabled: !!token,
   });
 }

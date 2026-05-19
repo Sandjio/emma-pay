@@ -1,7 +1,10 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { AuthProvider } from "./lib/auth-context";
+import { configureNotifications } from "./lib/notifications";
 import { queryClient } from "./lib/queryClient";
+
+configureNotifications();
 
 export default function RootLayout() {
   return (

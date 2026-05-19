@@ -7,7 +7,8 @@ export function useBankAccountsQuery() {
   const token = useAuthToken();
   return useQuery({
     queryKey: queryKeys.bankAccounts,
-    queryFn: () => bankApi.list(token).then((r) => r.bankAccounts),
+    queryFn: () => bankApi.list(token!).then((r) => r.bankAccounts),
+    enabled: !!token,
   });
 }
 
@@ -15,8 +16,10 @@ export function useCreateBankAccountMutation() {
   const token = useAuthToken();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: Parameters<typeof bankApi.create>[1]) =>
-      bankApi.create(token, input).then((r) => r.bankAccount),
+    mutationFn: (input: Parameters<typeof bankApi.create>[1]) => {
+      if (!token) throw new Error("Not authenticated");
+      return bankApi.create(token, input).then((r) => r.bankAccount);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.bankAccounts });
     },
@@ -27,7 +30,10 @@ export function useDeleteBankAccountMutation() {
   const token = useAuthToken();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => bankApi.remove(token, id),
+    mutationFn: (id: string) => {
+      if (!token) throw new Error("Not authenticated");
+      return bankApi.remove(token, id);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: queryKeys.bankAccounts });
       qc.invalidateQueries({ queryKey: queryKeys.transactions });
