@@ -1,4 +1,10 @@
-import type { Card, Contact, Transaction, User } from "@prisma/client";
+import type {
+  BankAccount,
+  Card,
+  Contact,
+  Transaction,
+  User,
+} from "@prisma/client";
 
 export function toUserDTO(user: User) {
   return {
@@ -21,7 +27,23 @@ export function toCardDTO(card: Card) {
   };
 }
 
-export function toTransactionDTO(txn: Transaction) {
+export function toCardDetailDTO(card: Card) {
+  return {
+    ...toCardDTO(card),
+    fullNumber: card.fullNumber,
+    expiry: card.expiry,
+    cvv: card.cvv,
+  };
+}
+
+type TransactionBankAccountSlice = Pick<
+  BankAccount,
+  "institutionName" | "lastFour" | "logoColor" | "logoLetter"
+>;
+
+export function toTransactionDTO(
+  txn: Transaction & { bankAccount?: TransactionBankAccountSlice | null },
+) {
   return {
     id: txn.id,
     type: txn.type,
@@ -30,6 +52,14 @@ export function toTransactionDTO(txn: Transaction) {
     counterpartyName: txn.counterpartyName,
     status: txn.status,
     createdAt: txn.createdAt.toISOString(),
+    bankAccount: txn.bankAccount
+      ? {
+          institutionName: txn.bankAccount.institutionName,
+          lastFour: txn.bankAccount.lastFour,
+          logoColor: txn.bankAccount.logoColor,
+          logoLetter: txn.bankAccount.logoLetter,
+        }
+      : null,
   };
 }
 
@@ -40,5 +70,19 @@ export function toContactDTO(contact: Contact) {
     handle: contact.handle,
     initials: contact.initials,
     accentColor: contact.accentColor,
+  };
+}
+
+export function toBankAccountDTO(b: BankAccount) {
+  return {
+    id: b.id,
+    institutionId: b.institutionId,
+    institutionName: b.institutionName,
+    logoColor: b.logoColor,
+    logoLetter: b.logoLetter,
+    accountType: b.accountType,
+    lastFour: b.lastFour,
+    isPrimary: b.isPrimary,
+    createdAt: b.createdAt.toISOString(),
   };
 }

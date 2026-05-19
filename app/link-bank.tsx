@@ -13,6 +13,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ApiError } from "./lib/api";
+import { useCreateBankAccountMutation } from "./lib/queries/useBankAccounts";
 
 type Bank = {
   id: string;
@@ -37,6 +39,27 @@ const ALL_BANKS: Bank[] = [
 export default function LinkBankScreen() {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const linkBank = useCreateBankAccountMutation();
+
+  async function handleLink(bank: Bank) {
+    setError("");
+    setPendingId(bank.id);
+    try {
+      await linkBank.mutateAsync({
+        institutionId: bank.id,
+        institutionName: bank.name,
+        logoColor: bank.color,
+        logoLetter: bank.letter,
+      });
+      router.back();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not link bank");
+    } finally {
+      setPendingId(null);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -66,12 +89,17 @@ export default function LinkBankScreen() {
           />
         </View>
 
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
         <Text style={styles.sectionLabel}>POPULAR</Text>
         <View style={styles.bankCard}>
           {POPULAR.map((b, idx) => (
             <BankRow
               key={b.id}
               bank={b}
+              pending={pendingId === b.id}
+              disabled={pendingId !== null}
+              onPress={() => handleLink(b)}
               showDivider={idx < POPULAR.length - 1}
             />
           ))}
@@ -83,6 +111,9 @@ export default function LinkBankScreen() {
             <BankRow
               key={b.id}
               bank={b}
+              pending={pendingId === b.id}
+              disabled={pendingId !== null}
+              onPress={() => handleLink(b)}
               showDivider={idx < ALL_BANKS.length - 1}
             />
           ))}
@@ -92,19 +123,40 @@ export default function LinkBankScreen() {
   );
 }
 
-function BankRow({ bank, showDivider }: { bank: Bank; showDivider: boolean }) {
+function BankRow({
+  bank,
+  showDivider,
+  pending,
+  disabled,
+  onPress,
+}: {
+  bank: Bank;
+  showDivider: boolean;
+  pending: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
   return (
     <>
-      <TouchableOpacity style={styles.row} activeOpacity={0.7}>
+      <TouchableOpacity
+        style={styles.row}
+        activeOpacity={0.7}
+        onPress={onPress}
+        disabled={disabled}
+      >
         <View style={[styles.bankLogo, { backgroundColor: bank.color }]}>
           <Text style={styles.bankLetter}>{bank.letter}</Text>
         </View>
         <Text style={styles.bankName}>{bank.name}</Text>
-        <Feather
-          name="chevron-right"
-          size={20}
-          color={Colors.neutral.hint}
-        />
+        {pending ? (
+          <Text style={styles.pendingText}>Linking…</Text>
+        ) : (
+          <Feather
+            name="chevron-right"
+            size={20}
+            color={Colors.neutral.hint}
+          />
+        )}
       </TouchableOpacity>
       {showDivider ? <View style={styles.divider} /> : null}
     </>
@@ -191,5 +243,15 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: Colors.neutral.divider,
     marginLeft: 50,
+  },
+  pendingText: {
+    fontSize: 12,
+    color: Colors.brand.blue,
+    fontWeight: "600",
+  },
+  errorText: {
+    fontSize: 13,
+    color: Colors.neutral.errorText,
+    marginTop: 12,
   },
 });

@@ -15,9 +15,24 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuth } from "../lib/auth-context";
+import { handleFromEmail, initialsFromName } from "../lib/format";
+import { useBankAccountsQuery } from "../lib/queries/useBankAccounts";
+import { useCardsQuery } from "../lib/queries/useCards";
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { user, signOut } = useAuth();
+  const cardsQuery = useCardsQuery();
+  const banksQuery = useBankAccountsQuery();
+  const cardCount = cardsQuery.data?.length ?? 0;
+  const bankCount = banksQuery.data?.length ?? 0;
+  const paymentSubtitle = `${cardCount} card${cardCount === 1 ? "" : "s"} · ${bankCount} bank${bankCount === 1 ? "" : "s"}`;
+
+  async function handleLogout() {
+    await signOut();
+    router.replace("/");
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -39,14 +54,17 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.userRow}>
-          <Avatar initials="AO" size={56} variant="solid" />
+          <Avatar
+            initials={user ? initialsFromName(user.name) : "?"}
+            size={56}
+            variant="solid"
+          />
           <View style={styles.userBody}>
-            <Text style={styles.userName}>Amara Okafor</Text>
+            <Text style={styles.userName}>{user?.name ?? ""}</Text>
             <View style={styles.userMetaRow}>
-              <Text style={styles.userMeta}>@amara · Verified</Text>
-              <View style={styles.verifiedBadge}>
-                <Feather name="check" size={10} color="#FFFFFF" />
-              </View>
+              <Text style={styles.userMeta}>
+                {user ? handleFromEmail(user.email) : ""}
+              </Text>
             </View>
           </View>
           <TouchableOpacity style={styles.editPill} activeOpacity={0.85}>
@@ -70,7 +88,7 @@ export default function ProfileScreen() {
               <Feather name="credit-card" size={18} color={Colors.neutral.body} />
             }
             title="Payment methods"
-            subtitle="3 cards · 1 bank"
+            subtitle={paymentSubtitle}
             onPress={() => {}}
           />
           <View style={styles.divider} />
@@ -143,7 +161,7 @@ export default function ProfileScreen() {
 
         <TouchableOpacity
           style={styles.logoutRow}
-          onPress={() => router.replace("/")}
+          onPress={handleLogout}
           activeOpacity={0.7}
         >
           <Text style={styles.logoutText}>Log out</Text>

@@ -19,6 +19,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ApiError } from "./lib/api";
+import { useCreateCardMutation } from "./lib/queries/useCards";
 
 type StyleOption = { id: CardVariant; color: string };
 
@@ -32,7 +34,23 @@ const STYLES: StyleOption[] = [
 export default function NewVirtualCardScreen() {
   const router = useRouter();
   const [variant, setVariant] = useState<CardVariant>("blue");
-  const [name, setName] = useState("Streaming services");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const createCard = useCreateCardMutation();
+
+  async function handleCreate() {
+    setError("");
+    try {
+      await createCard.mutateAsync({
+        type: "VIRTUAL",
+        variant: variant.toUpperCase() as "BLUE" | "PURPLE" | "GREEN" | "OBSIDIAN",
+        currency: "USD",
+      });
+      router.back();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not create card");
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
@@ -84,6 +102,8 @@ export default function NewVirtualCardScreen() {
           placeholderTextColor={Colors.neutral.placeholder}
         />
 
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
         <View style={[styles.card, styles.cardSpacer]}>
           <SettingsRow
             iconBg="#F4F5F9"
@@ -127,8 +147,9 @@ export default function NewVirtualCardScreen() {
 
       <View style={styles.footer}>
         <PrimaryButton
-          label="Create card · Free"
-          onPress={() => router.back()}
+          label={createCard.isPending ? "Creating…" : "Create card · Free"}
+          onPress={handleCreate}
+          disabled={createCard.isPending}
         />
       </View>
     </SafeAreaView>
@@ -192,6 +213,11 @@ const styles = StyleSheet.create({
   },
   cardSpacer: {
     marginTop: 16,
+  },
+  errorText: {
+    fontSize: 13,
+    color: Colors.neutral.errorText,
+    marginTop: 12,
   },
   divider: {
     height: 1,

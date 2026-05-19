@@ -18,6 +18,7 @@ model User {
   cards        Card[]
   transactions Transaction[]
   contacts     Contact[]
+  bankAccounts BankAccount[]
 }
 
 enum CardType {
@@ -33,15 +34,18 @@ enum CardVariant {
 }
 
 model Card {
-  id        String      @id @default(cuid())
-  userId    String
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type      CardType
-  currency  String      @default("USD")
-  balance   Decimal     @default(0) @db.Decimal(18, 2)
-  lastFour  String
-  variant   CardVariant @default(BLUE)
-  createdAt DateTime    @default(now())
+  id         String      @id @default(cuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type       CardType
+  currency   String      @default("USD")
+  balance    Decimal     @default(0) @db.Decimal(18, 2)
+  lastFour   String
+  variant    CardVariant @default(BLUE)
+  fullNumber String      @db.VarChar(19)
+  expiry     String      @db.VarChar(5)
+  cvv        String      @db.VarChar(4)
+  createdAt  DateTime    @default(now())
 
   @@index([userId])
 }
@@ -60,17 +64,42 @@ enum TxnStatus {
 }
 
 model Transaction {
-  id               String    @id @default(cuid())
+  id               String       @id @default(cuid())
   userId           String
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   type             TxnType
-  amount           Decimal   @db.Decimal(18, 2)
-  currency         String    @default("USD")
+  amount           Decimal      @db.Decimal(18, 2)
+  currency         String       @default("USD")
   counterpartyName String?
-  status           TxnStatus @default(COMPLETED)
-  createdAt        DateTime  @default(now())
+  status           TxnStatus    @default(COMPLETED)
+  bankAccountId    String?
+  bankAccount      BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  createdAt        DateTime     @default(now())
 
   @@index([userId, createdAt])
+  @@index([bankAccountId])
+}
+
+enum BankAccountType {
+  CHECKING
+  SAVINGS
+}
+
+model BankAccount {
+  id              String          @id @default(cuid())
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institutionId   String
+  institutionName String
+  logoColor       String
+  logoLetter      String          @db.VarChar(2)
+  accountType     BankAccountType @default(CHECKING)
+  lastFour        String          @db.VarChar(4)
+  isPrimary       Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  transactions    Transaction[]
+
+  @@index([userId])
 }
 
 model Contact {

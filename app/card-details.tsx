@@ -1,9 +1,9 @@
 import { PaymentCard, ScreenHeader, SettingsRow } from "@/components/ui";
 import { Colors, Spacing } from "@/constants/theme";
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -13,13 +13,32 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { formatCurrency } from "./lib/format";
+import { useCardQuery, useCardsQuery } from "./lib/queries/useCards";
+
+function variantToProp(v: string) {
+  return v.toLowerCase() as "blue" | "purple" | "green" | "obsidian";
+}
 
 export default function CardDetailsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ id?: string }>();
+  const cardsQuery = useCardsQuery();
+  const cards = cardsQuery.data ?? [];
+  const cardId = params.id ?? cards[0]?.id ?? null;
+  const cardQuery = useCardQuery(cardId);
+  const card = cardQuery.data;
+
   const [revealed, setRevealed] = useState(false);
   const [frozen, setFrozen] = useState(false);
   const [onlinePayments, setOnlinePayments] = useState(true);
   const [spendingLimit, setSpendingLimit] = useState(false);
+
+  useEffect(() => {
+    if (cardsQuery.isSuccess && !cardId) {
+      router.back();
+    }
+  }, [cardsQuery.isSuccess, cardId, router]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -39,27 +58,36 @@ export default function CardDetailsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <PaymentCard
-          type="VIRTUAL"
-          balance="$1,240.55"
-          lastFour="4821"
-          variant="blue"
+          type={card?.type ?? "VIRTUAL"}
+          currency={card?.currency ?? "USD"}
+          balance={
+            card ? formatCurrency(card.balance, card.currency) : "$0.00"
+          }
+          lastFour={card?.lastFour}
+          variant={variantToProp(card?.variant ?? "BLUE")}
         />
 
         <View style={styles.detailBlock}>
           <Text style={styles.detailLabel}>CARD NUMBER</Text>
           <Text style={styles.detailValue}>
-            {revealed ? "1234 5678 9012 4821" : "•••• •••• •••• 4821"}
+            {revealed && card
+              ? card.fullNumber
+              : `•••• •••• •••• ${card?.lastFour ?? "••••"}`}
           </Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.detailRow}>
           <View style={styles.detailHalf}>
             <Text style={styles.detailLabel}>EXPIRY</Text>
-            <Text style={styles.detailValue}>{revealed ? "08/29" : "••/••"}</Text>
+            <Text style={styles.detailValue}>
+              {revealed && card ? card.expiry : "••/••"}
+            </Text>
           </View>
           <View style={styles.detailHalf}>
             <Text style={styles.detailLabel}>CVV</Text>
-            <Text style={styles.detailValue}>{revealed ? "421" : "•••"}</Text>
+            <Text style={styles.detailValue}>
+              {revealed && card ? card.cvv : "•••"}
+            </Text>
           </View>
         </View>
         <View style={styles.divider} />

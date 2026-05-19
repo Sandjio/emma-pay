@@ -1,8 +1,7 @@
 import { ScreenHeader, TransactionItem } from "@/components/ui";
 import { Colors, Spacing } from "@/constants/theme";
-import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -11,6 +10,16 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import type { ApiTransaction } from "../lib/api";
+import {
+  formatRelativeDay,
+  formatTime,
+  isPositive,
+  signedAmount,
+  transactionTitle,
+} from "../lib/format";
+import { useTransactionsQuery } from "../lib/queries/useTransactions";
+import { iconForTransaction } from "../lib/transactionIcon";
 
 type FilterId = "all" | "sent" | "received" | "topup" | "cards";
 
@@ -22,120 +31,58 @@ const FILTERS: { id: FilterId; label: string }[] = [
   { id: "cards", label: "Cards" },
 ];
 
-type ActivityItem = {
-  id: string;
-  title: string;
-  subtitle: string;
-  amount: string;
-  positive?: boolean;
-  iconBg: string;
-  iconColor: string;
-  icon: React.ReactNode;
-  filters: FilterId[];
-};
+function matchesFilter(t: ApiTransaction, filter: FilterId): boolean {
+  if (filter === "all") return true;
+  if (filter === "sent") return t.type === "SEND" || t.type === "WITHDRAW";
+  if (filter === "received") return t.type === "RECEIVE";
+  if (filter === "topup") return t.type === "TOPUP";
+  if (filter === "cards") return t.type === "SEND" || t.type === "WITHDRAW";
+  return true;
+}
 
-type DateGroup = { label: string; items: ActivityItem[] };
+function subtitleForActivity(t: ApiTransaction): string {
+  const time = formatTime(t.createdAt);
+  switch (t.type) {
+    case "SEND":
+      return `${time} · Sent`;
+    case "RECEIVE":
+      return `${time} · Received`;
+    case "TOPUP":
+      return t.bankAccount
+        ? `${time} · ${t.bankAccount.institutionName}`
+        : `${time} · Top up`;
+    case "WITHDRAW":
+      return t.bankAccount
+        ? `${time} · Bank · ••${t.bankAccount.lastFour}`
+        : `${time} · Withdraw`;
+    default:
+      return time;
+  }
+}
 
-const ACTIVITY: DateGroup[] = [
-  {
-    label: "TODAY",
-    items: [
-      {
-        id: "spotify",
-        title: "Spotify Premium",
-        subtitle: "9:22 AM · Card",
-        amount: "-$10.99",
-        iconBg: "#DCFCE7",
-        iconColor: "#16A34A",
-        icon: <Feather name="headphones" size={18} color="#16A34A" />,
-        filters: ["all", "cards"],
-      },
-      {
-        id: "daniel",
-        title: "Daniel Mensah",
-        subtitle: "9:41 AM · Sent",
-        amount: "-$45.00",
-        iconBg: "#DBEAFE",
-        iconColor: "#2563EB",
-        icon: <Feather name="send" size={16} color="#2563EB" />,
-        filters: ["all", "sent"],
-      },
-    ],
-  },
-  {
-    label: "YESTERDAY",
-    items: [
-      {
-        id: "topup-chase",
-        title: "Top up · Chase",
-        subtitle: "4:13 PM · Debit",
-        amount: "+$200.00",
-        positive: true,
-        iconBg: "#DCFCE7",
-        iconColor: "#16A34A",
-        icon: <Feather name="plus" size={18} color="#16A34A" />,
-        filters: ["all", "topup"],
-      },
-      {
-        id: "whole-foods",
-        title: "Whole Foods",
-        subtitle: "1:08 PM · Card",
-        amount: "-$84.20",
-        iconBg: "#DCFCE7",
-        iconColor: "#16A34A",
-        icon: (
-          <MaterialCommunityIcons name="leaf" size={18} color="#16A34A" />
-        ),
-        filters: ["all", "cards"],
-      },
-      {
-        id: "sofia",
-        title: "Sofia Reyes",
-        subtitle: "11:51 AM · Received",
-        amount: "+$60.00",
-        positive: true,
-        iconBg: "#DBEAFE",
-        iconColor: "#2563EB",
-        icon: <Feather name="arrow-down" size={16} color="#2563EB" />,
-        filters: ["all", "received"],
-      },
-    ],
-  },
-  {
-    label: "MAY 9",
-    items: [
-      {
-        id: "uber",
-        title: "Uber",
-        subtitle: "Refund",
-        amount: "+$14.50",
-        positive: true,
-        iconBg: "#FEE2E2",
-        iconColor: "#DC2626",
-        icon: <Feather name="truck" size={16} color="#DC2626" />,
-        filters: ["all", "received"],
-      },
-      {
-        id: "withdraw-boa",
-        title: "Withdraw to BoA",
-        subtitle: "Bank · ••8847",
-        amount: "-$300.00",
-        iconBg: "#DBEAFE",
-        iconColor: "#2563EB",
-        icon: <Feather name="arrow-up" size={16} color="#2563EB" />,
-        filters: ["all", "sent"],
-      },
-    ],
-  },
-];
+function groupByDay(txns: ApiTransaction[]): { label: string; items: ApiTransaction[] }[] {
+  const groups: Record<string, ApiTransaction[]> = {};
+  const order: string[] = [];
+  for (const t of txns) {
+    const label = formatRelativeDay(t.createdAt).toUpperCase();
+    if (!groups[label]) {
+      groups[label] = [];
+      order.push(label);
+    }
+    groups[label].push(t);
+  }
+  return order.map((label) => ({ label, items: groups[label] }));
+}
 
 export default function ActivityScreen() {
   const [filter, setFilter] = useState<FilterId>("all");
+  const { data, isLoading } = useTransactionsQuery();
+  const txns = data ?? [];
 
-  const groups = ACTIVITY.map((g) => ({
-    ...g,
-    items: g.items.filter((i) => i.filters.includes(filter)),
-  })).filter((g) => g.items.length > 0);
+  const groups = useMemo(() => {
+    const filtered = txns.filter((t) => matchesFilter(t, filter));
+    return groupByDay(filtered);
+  }, [txns, filter]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top"]}>
@@ -175,28 +122,44 @@ export default function ActivityScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {groups.map((group) => (
-          <View key={group.label} style={styles.section}>
-            <Text style={styles.sectionLabel}>{group.label}</Text>
-            <View style={styles.card}>
-              {group.items.map((item, idx) => (
-                <View key={item.id}>
-                  <TransactionItem
-                    icon={item.icon}
-                    iconBg={item.iconBg}
-                    title={item.title}
-                    subtitle={item.subtitle}
-                    amount={item.amount}
-                    positive={item.positive}
-                  />
-                  {idx < group.items.length - 1 ? (
-                    <View style={styles.itemDivider} />
-                  ) : null}
-                </View>
-              ))}
-            </View>
+        {groups.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyTitle}>
+              {isLoading ? "Loading…" : "No activity yet"}
+            </Text>
+            {!isLoading ? (
+              <Text style={styles.emptyHint}>
+                Your transactions will appear here.
+              </Text>
+            ) : null}
           </View>
-        ))}
+        ) : (
+          groups.map((group) => (
+            <View key={group.label} style={styles.section}>
+              <Text style={styles.sectionLabel}>{group.label}</Text>
+              <View style={styles.card}>
+                {group.items.map((t, idx) => {
+                  const icon = iconForTransaction(t);
+                  return (
+                    <View key={t.id}>
+                      <TransactionItem
+                        icon={icon.node}
+                        iconBg={icon.bg}
+                        title={transactionTitle(t)}
+                        subtitle={subtitleForActivity(t)}
+                        amount={signedAmount(t, t.currency)}
+                        positive={isPositive(t)}
+                      />
+                      {idx < group.items.length - 1 ? (
+                        <View style={styles.itemDivider} />
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ))
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -265,5 +228,19 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: Colors.neutral.divider,
     marginLeft: 52,
+  },
+  emptyWrap: {
+    alignItems: "center",
+    paddingTop: 80,
+    gap: 6,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.neutral.dark,
+  },
+  emptyHint: {
+    fontSize: 13,
+    color: Colors.neutral.hint,
   },
 });

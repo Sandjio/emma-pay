@@ -8,7 +8,7 @@ import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -17,12 +17,44 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuth } from "../lib/auth-context";
+import {
+  firstName,
+  formatCurrency,
+  formatCurrencyParts,
+  initialsFromName,
+  isPositive,
+  signedAmount,
+  transactionSubtitle,
+  transactionTitle,
+} from "../lib/format";
+import { useCardsQuery } from "../lib/queries/useCards";
+import { useTransactionsQuery } from "../lib/queries/useTransactions";
+import { sumCardBalances, summarizeTransactions } from "../lib/summarize";
+import { iconForTransaction } from "../lib/transactionIcon";
 
 const WEEK_DAYS = ["M", "T", "W", "T", "F", "S", "S"];
 
 export default function HomeScreen() {
   const router = useRouter();
   const [balanceVisible, setBalanceVisible] = useState(true);
+  const { user } = useAuth();
+  const cardsQuery = useCardsQuery();
+  const txnsQuery = useTransactionsQuery();
+
+  const cards = cardsQuery.data ?? [];
+  const txns = txnsQuery.data ?? [];
+
+  const totalBalance = useMemo(() => sumCardBalances(cards), [cards]);
+  const summary = useMemo(() => summarizeTransactions(txns), [txns]);
+  const balanceParts = formatCurrencyParts(totalBalance);
+
+  const monthlyValue = Number(summary.monthlyChange);
+  const monthlyLabel = `${monthlyValue >= 0 ? "+" : "-"}${formatCurrency(
+    Math.abs(monthlyValue),
+  )} this month`;
+
+  const recentTxns = txns.slice(0, 3);
 
   return (
     <View style={styles.root}>
@@ -41,10 +73,12 @@ export default function HomeScreen() {
         >
           <SafeAreaView edges={["top"]} style={styles.headerInner}>
             <View style={styles.userRow}>
-              <Avatar initials="AO" />
+              <Avatar initials={user ? initialsFromName(user.name) : "?"} />
               <View style={styles.greetingGroup}>
                 <Text style={styles.greetingSmall}>Good morning</Text>
-                <Text style={styles.greetingName}>Amara</Text>
+                <Text style={styles.greetingName}>
+                  {user ? firstName(user.name) : ""}
+                </Text>
               </View>
               <TouchableOpacity style={styles.bellButton} hitSlop={8}>
                 <Feather name="bell" size={20} color="#FFFFFF" />
@@ -68,14 +102,23 @@ export default function HomeScreen() {
               <Text style={styles.balanceAmount}>
                 {balanceVisible ? (
                   <>
-                    $12,480
-                    <Text style={styles.balanceDecimal}>.32</Text>
+                    {balanceParts.whole}
+                    <Text style={styles.balanceDecimal}>
+                      {balanceParts.fraction}
+                    </Text>
                   </>
                 ) : (
                   "••••••"
                 )}
               </Text>
-              <Text style={styles.balanceChange}>+$320.50 this month</Text>
+              <Text
+                style={[
+                  styles.balanceChange,
+                  monthlyValue < 0 && styles.balanceChangeNegative,
+                ]}
+              >
+                {monthlyLabel}
+              </Text>
             </View>
           </SafeAreaView>
         </LinearGradient>
@@ -133,7 +176,9 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>This week</Text>
-            <Text style={styles.sectionMeta}>$486 spent</Text>
+            <Text style={styles.sectionMeta}>
+              {formatCurrency(summary.weeklySpent)} spent
+            </Text>
           </View>
           <View style={styles.weekRow}>
             {WEEK_DAYS.map((d, i) => (
@@ -147,51 +192,31 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent activity</Text>
-            <TouchableOpacity hitSlop={8}>
+            <TouchableOpacity hitSlop={8} onPress={() => router.push("/activity")}>
               <Text style={Typography.link}>See all</Text>
             </TouchableOpacity>
           </View>
           <View>
-            <TransactionItem
-              iconBg={Colors.transaction.music.bg}
-              icon={
-                <Feather
-                  name="headphones"
-                  size={18}
-                  color={Colors.transaction.music.icon}
-                />
-              }
-              title="Spotify Premium"
-              subtitle="Subscription · Today"
-              amount="-$10.99"
-            />
-            <TransactionItem
-              iconBg={Colors.transaction.sent.bg}
-              icon={
-                <Feather
-                  name="send"
-                  size={16}
-                  color={Colors.transaction.sent.icon}
-                />
-              }
-              title="Daniel Mensah"
-              subtitle="Sent · Yesterday"
-              amount="-$45.00"
-            />
-            <TransactionItem
-              iconBg={Colors.transaction.topUp.bg}
-              icon={
-                <Feather
-                  name="plus"
-                  size={18}
-                  color={Colors.transaction.topUp.icon}
-                />
-              }
-              title="Top up · ****4821"
-              subtitle="2 days ago"
-              amount="+$200.00"
-              positive
-            />
+            {recentTxns.length === 0 ? (
+              <Text style={styles.emptyText}>
+                Your activity will show up here.
+              </Text>
+            ) : (
+              recentTxns.map((t) => {
+                const icon = iconForTransaction(t);
+                return (
+                  <TransactionItem
+                    key={t.id}
+                    iconBg={icon.bg}
+                    icon={icon.node}
+                    title={transactionTitle(t)}
+                    subtitle={transactionSubtitle(t)}
+                    amount={signedAmount(t, t.currency)}
+                    positive={isPositive(t)}
+                  />
+                );
+              })
+            )}
           </View>
         </View>
       </ScrollView>
@@ -275,6 +300,9 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     marginTop: 2,
   },
+  balanceChangeNegative: {
+    color: "#FCA5A5",
+  },
   actionsCard: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -323,5 +351,10 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     width: 28,
     textAlign: "center",
+  },
+  emptyText: {
+    fontSize: 13,
+    color: Colors.neutral.hint,
+    paddingVertical: 12,
   },
 });

@@ -21,12 +21,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError, auth } from "./lib/api";
-import { saveToken } from "./lib/auth-storage";
+import { useAuth } from "./lib/auth-context";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function LogInScreen() {
   const router = useRouter();
+  const { signIn } = useAuth();
 
   const [email, setEmail] = useState("");
   const [emailError, setEmailError] = useState("");
@@ -63,8 +64,8 @@ export default function LogInScreen() {
 
     setSubmitting(true);
     try {
-      const { token } = await auth.login({ email: email.trim(), password });
-      await saveToken(token);
+      const { token, user } = await auth.login({ email: email.trim(), password });
+      await signIn(token, user);
       router.replace("/home");
     } catch (err) {
       if (err instanceof ApiError && err.code === "INVALID_CREDENTIALS") {

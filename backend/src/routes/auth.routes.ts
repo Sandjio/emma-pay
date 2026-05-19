@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db/prisma";
+import { makeDemoCardSecrets, makeLastFour } from "../lib/card-mock";
 import { HttpError } from "../lib/http-error";
 import { signToken } from "../lib/jwt";
 import { toUserDTO } from "../lib/mappers";
@@ -18,8 +19,23 @@ authRouter.post("/signup", async (req, res, next) => {
 
     let user;
     try {
-      user = await prisma.user.create({
-        data: { name, email, passwordHash },
+      user = await prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: { name, email, passwordHash },
+        });
+        const lastFour = makeLastFour();
+        await tx.card.create({
+          data: {
+            userId: created.id,
+            type: "VIRTUAL",
+            variant: "BLUE",
+            currency: "USD",
+            balance: new Prisma.Decimal(0),
+            lastFour,
+            ...makeDemoCardSecrets(lastFour),
+          },
+        });
+        return created;
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {

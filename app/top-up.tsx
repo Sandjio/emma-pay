@@ -1,9 +1,9 @@
 import { PrimaryButton, ScreenHeader } from "@/components/ui";
 import { Colors, Spacing } from "@/constants/theme";
-import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -12,52 +12,60 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ApiError } from "./lib/api";
+import { useBankAccountsQuery } from "./lib/queries/useBankAccounts";
+import { useCardsQuery } from "./lib/queries/useCards";
+import { useTopUpMutation } from "./lib/queries/useTransactions";
 
 const PRESETS = [50, 100, 250, 500];
-
-type PaymentMethod = {
-  id: string;
-  name: string;
-  detail: string;
-  icon: React.ReactNode;
-};
-
-const PAYMENT_METHODS: PaymentMethod[] = [
-  {
-    id: "chase",
-    name: "Chase debit",
-    detail: "•• 4821",
-    icon: (
-      <Feather name="credit-card" size={20} color={Colors.brand.deepBlue} />
-    ),
-  },
-  {
-    id: "bofa",
-    name: "Bank of America",
-    detail: "ACH · 3-5 days",
-    icon: (
-      <MaterialCommunityIcons
-        name="bank-outline"
-        size={20}
-        color={Colors.brand.deepBlue}
-      />
-    ),
-  },
-  {
-    id: "apple",
-    name: "Apple Pay",
-    detail: "Instant",
-    icon: <Feather name="smartphone" size={20} color={Colors.brand.deepBlue} />,
-  },
-];
 
 export default function TopUpScreen() {
   const router = useRouter();
   const [amount, setAmount] = useState<number>(250);
-  const [methodId, setMethodId] = useState<string>("chase");
+  const [bankId, setBankId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  const cardsQuery = useCardsQuery();
+  const banksQuery = useBankAccountsQuery();
+  const topUp = useTopUpMutation();
+
+  const cards = cardsQuery.data ?? [];
+  const banks = banksQuery.data ?? [];
+  const primaryCard = cards[0];
+
+  useEffect(() => {
+    if (!bankId && banks.length > 0) {
+      const primary = banks.find((b) => b.isPrimary) ?? banks[0];
+      setBankId(primary.id);
+    }
+  }, [banks, bankId]);
 
   const integer = Math.floor(amount).toString();
   const decimals = (amount % 1).toFixed(2).slice(2);
+  const fixed = `${integer}.${decimals}`;
+
+  async function handleTopUp() {
+    setError("");
+    if (!primaryCard) {
+      setError("You need a card to top up");
+      return;
+    }
+    if (!bankId) {
+      setError("Select a bank to fund this top up");
+      return;
+    }
+    try {
+      const txn = await topUp.mutateAsync({
+        amount: fixed,
+        currency: primaryCard.currency,
+        cardId: primaryCard.id,
+        bankAccountId: bankId,
+      });
+      router.replace({ pathname: "/success", params: { txnId: txn.id } });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not top up");
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
@@ -104,28 +112,50 @@ export default function TopUpScreen() {
 
         <Text style={styles.sectionLabel}>Pay with</Text>
 
-        <View style={styles.methodList}>
-          {PAYMENT_METHODS.map((m) => {
-            const selected = m.id === methodId;
-            return (
-              <TouchableOpacity
-                key={m.id}
-                style={[styles.methodCard, selected && styles.methodCardActive]}
-                onPress={() => setMethodId(m.id)}
-                activeOpacity={0.85}
-              >
-                <View style={styles.methodIcon}>{m.icon}</View>
-                <View style={styles.methodBody}>
-                  <Text style={styles.methodName}>{m.name}</Text>
-                  <Text style={styles.methodDetail}>{m.detail}</Text>
-                </View>
-                <View style={[styles.radio, selected && styles.radioActive]}>
-                  {selected ? <View style={styles.radioDot} /> : null}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {banks.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No bank linked</Text>
+            <Text style={styles.emptyHint}>
+              Link a bank account to fund your card.
+            </Text>
+            <TouchableOpacity
+              style={styles.emptyCta}
+              onPress={() => router.push("/link-bank")}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.emptyCtaText}>Link a bank</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.methodList}>
+            {banks.map((b) => {
+              const selected = b.id === bankId;
+              return (
+                <TouchableOpacity
+                  key={b.id}
+                  style={[styles.methodCard, selected && styles.methodCardActive]}
+                  onPress={() => setBankId(b.id)}
+                  activeOpacity={0.85}
+                >
+                  <View style={[styles.methodIcon, { backgroundColor: b.logoColor }]}>
+                    <Text style={styles.methodIconText}>{b.logoLetter}</Text>
+                  </View>
+                  <View style={styles.methodBody}>
+                    <Text style={styles.methodName}>{b.institutionName}</Text>
+                    <Text style={styles.methodDetail}>
+                      {b.accountType === "SAVINGS" ? "Savings" : "Checking"} · ••{b.lastFour}
+                    </Text>
+                  </View>
+                  <View style={[styles.radio, selected && styles.radioActive]}>
+                    {selected ? <View style={styles.radioDot} /> : null}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
         <View style={styles.infoBanner}>
           <View style={styles.infoIcon}>
@@ -140,8 +170,13 @@ export default function TopUpScreen() {
 
       <View style={styles.footer}>
         <PrimaryButton
-          label={`Top up $${integer}.${decimals}`}
-          onPress={() => router.back()}
+          label={
+            topUp.isPending
+              ? "Topping up…"
+              : `Top up $${fixed}`
+          }
+          onPress={handleTopUp}
+          disabled={topUp.isPending || banks.length === 0 || !primaryCard}
         />
       </View>
     </SafeAreaView>
@@ -254,9 +289,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: "#F0F2F8",
     alignItems: "center",
     justifyContent: "center",
+  },
+  methodIconText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
   methodBody: {
     flex: 1,
@@ -288,6 +327,46 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     backgroundColor: Colors.brand.blue,
+  },
+  emptyCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: Colors.neutral.divider,
+    padding: 16,
+    gap: 8,
+    alignItems: "center",
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.neutral.dark,
+  },
+  emptyHint: {
+    fontSize: 13,
+    color: Colors.neutral.hint,
+    textAlign: "center",
+  },
+  emptyCta: {
+    marginTop: 6,
+    paddingHorizontal: 16,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: Colors.brand.blue,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyCtaText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  errorText: {
+    fontSize: 13,
+    color: Colors.neutral.errorText,
+    alignSelf: "flex-start",
+    marginTop: 12,
   },
   infoBanner: {
     flexDirection: "row",

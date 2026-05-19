@@ -9,6 +9,60 @@ export type ApiUser = {
 
 export type AuthResponse = { user: ApiUser; token: string };
 
+export type ApiCard = {
+  id: string;
+  type: "VIRTUAL" | "PHYSICAL";
+  currency: string;
+  balance: string;
+  lastFour: string;
+  variant: "BLUE" | "PURPLE" | "GREEN" | "OBSIDIAN";
+  createdAt: string;
+};
+
+export type ApiCardDetail = ApiCard & {
+  fullNumber: string;
+  expiry: string;
+  cvv: string;
+};
+
+export type ApiTransactionBank = {
+  institutionName: string;
+  lastFour: string;
+  logoColor: string;
+  logoLetter: string;
+};
+
+export type ApiTransaction = {
+  id: string;
+  type: "SEND" | "RECEIVE" | "TOPUP" | "WITHDRAW";
+  amount: string;
+  currency: string;
+  counterpartyName: string | null;
+  status: "PENDING" | "COMPLETED" | "FAILED";
+  createdAt: string;
+  bankAccount: ApiTransactionBank | null;
+};
+
+export type ApiContact = {
+  id: string;
+  name: string;
+  handle: string;
+  initials: string;
+  accentColor: string;
+};
+
+export type ApiBankAccount = {
+  id: string;
+  institutionId: string;
+  institutionName: string;
+  logoColor: string;
+  logoLetter: string;
+  accountType: "CHECKING" | "SAVINGS";
+  lastFour: string;
+  isPrimary: boolean;
+  createdAt: string;
+};
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -88,4 +142,87 @@ export const auth = {
   login: (input: { email: string; password: string }) =>
     apiFetch<AuthResponse>("/auth/login", { method: "POST", body: input }),
   me: (token: string) => apiFetch<{ user: ApiUser }>("/auth/me", { token }),
+};
+
+export const users = {
+  me: (token: string) => apiFetch<{ user: ApiUser }>("/users/me", { token }),
+};
+
+export const cards = {
+  list: (token: string) =>
+    apiFetch<{ cards: ApiCard[] }>("/cards", { token }),
+  get: (token: string, id: string) =>
+    apiFetch<{ card: ApiCardDetail }>(`/cards/${id}`, { token }),
+  create: (
+    token: string,
+    input: { type: "VIRTUAL" | "PHYSICAL"; variant?: ApiCard["variant"]; currency?: string },
+  ) =>
+    apiFetch<{ card: ApiCard }>("/cards", {
+      method: "POST",
+      body: input,
+      token,
+    }),
+};
+
+export const transactions = {
+  list: (token: string, cursor?: string) =>
+    apiFetch<{ transactions: ApiTransaction[]; nextCursor: string | null }>(
+      `/transactions${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+      { token },
+    ),
+  send: (
+    token: string,
+    input: { amount: string; currency: string; counterpartyName: string; contactId?: string },
+  ) =>
+    apiFetch<{ transaction: ApiTransaction }>("/transactions/send", {
+      method: "POST",
+      body: input,
+      token,
+    }),
+  topUp: (
+    token: string,
+    input: { amount: string; currency: string; cardId: string; bankAccountId?: string },
+  ) =>
+    apiFetch<{ transaction: ApiTransaction }>("/transactions/top-up", {
+      method: "POST",
+      body: input,
+      token,
+    }),
+  withdraw: (
+    token: string,
+    input: { amount: string; currency: string; cardId: string; bankAccountId?: string },
+  ) =>
+    apiFetch<{ transaction: ApiTransaction }>("/transactions/withdraw", {
+      method: "POST",
+      body: input,
+      token,
+    }),
+};
+
+export const contacts = {
+  list: (token: string) =>
+    apiFetch<{ contacts: ApiContact[] }>("/contacts", { token }),
+};
+
+export const bankAccounts = {
+  list: (token: string) =>
+    apiFetch<{ bankAccounts: ApiBankAccount[] }>("/bank-accounts", { token }),
+  create: (
+    token: string,
+    input: {
+      institutionId: string;
+      institutionName: string;
+      logoColor: string;
+      logoLetter: string;
+      accountType?: "CHECKING" | "SAVINGS";
+      isPrimary?: boolean;
+    },
+  ) =>
+    apiFetch<{ bankAccount: ApiBankAccount }>("/bank-accounts", {
+      method: "POST",
+      body: input,
+      token,
+    }),
+  remove: (token: string, id: string) =>
+    apiFetch<void>(`/bank-accounts/${id}`, { method: "DELETE", token }),
 };

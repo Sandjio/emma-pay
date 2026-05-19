@@ -19,6 +19,7 @@ export const topUpSchema = z.object({
   amount,
   currency,
   cardId: z.string().min(1, "cardId is required"),
+  bankAccountId: z.string().optional(),
 });
 
 export const withdrawSchema = topUpSchema;

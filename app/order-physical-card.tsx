@@ -17,6 +17,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ApiError } from "./lib/api";
+import { useCreateCardMutation } from "./lib/queries/useCards";
 
 type Finish = { id: CardVariant; label: string; color: string };
 
@@ -29,6 +31,22 @@ const FINISHES: Finish[] = [
 export default function OrderPhysicalCardScreen() {
   const router = useRouter();
   const [finish, setFinish] = useState<CardVariant>("obsidian");
+  const [error, setError] = useState("");
+  const createCard = useCreateCardMutation();
+
+  async function handleOrder() {
+    setError("");
+    try {
+      await createCard.mutateAsync({
+        type: "PHYSICAL",
+        variant: finish.toUpperCase() as "BLUE" | "PURPLE" | "GREEN" | "OBSIDIAN",
+        currency: "USD",
+      });
+      router.back();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not order card");
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
@@ -100,10 +118,16 @@ export default function OrderPhysicalCardScreen() {
             <Text style={styles.summaryValue}>Free · 5-7 business days</Text>
           </View>
         </View>
+
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </ScrollView>
 
       <View style={styles.footer}>
-        <PrimaryButton label="Order card" onPress={() => router.back()} />
+        <PrimaryButton
+          label={createCard.isPending ? "Ordering…" : "Order card"}
+          onPress={handleOrder}
+          disabled={createCard.isPending}
+        />
       </View>
     </SafeAreaView>
   );
@@ -217,5 +241,10 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: Spacing.screenH,
     paddingTop: 8,
+  },
+  errorText: {
+    fontSize: 13,
+    color: Colors.neutral.errorText,
+    marginTop: 12,
   },
 });

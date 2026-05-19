@@ -15,12 +15,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ApiError, auth } from "./lib/api";
-import { saveToken } from "./lib/auth-storage";
+import { useAuth } from "./lib/auth-context";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function SignUpScreen() {
   const router = useRouter();
+  const { signIn } = useAuth();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -61,12 +62,12 @@ export default function SignUpScreen() {
     }
     setSubmitting(true);
     try {
-      const { token } = await auth.signup({
+      const { token, user } = await auth.signup({
         name: name.trim(),
         email: email.trim(),
         password,
       });
-      await saveToken(token);
+      await signIn(token, user);
       router.replace("/home");
     } catch (err) {
       if (err instanceof ApiError && err.code === "EMAIL_TAKEN") {

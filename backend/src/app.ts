@@ -5,6 +5,7 @@ import morgan from "morgan";
 import { env } from "./config/env";
 import { errorHandler, notFound } from "./middleware/error";
 import { authRouter } from "./routes/auth.routes";
+import { bankAccountsRouter } from "./routes/bank-accounts.routes";
 import { cardsRouter } from "./routes/cards.routes";
 import { transactionsRouter } from "./routes/transactions.routes";
 import { contactsRouter, usersRouter } from "./routes/users.routes";
@@ -27,6 +28,7 @@ export function buildApp() {
   app.use("/cards", cardsRouter);
   app.use("/transactions", transactionsRouter);
   app.use("/contacts", contactsRouter);
+  app.use("/bank-accounts", bankAccountsRouter);
 
   app.use(notFound);
   app.use(errorHandler);

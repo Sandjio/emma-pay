@@ -1,10 +1,17 @@
 import { PrimaryButton } from "@/components/ui";
 import { Colors, Spacing, Typography } from "@/constants/theme";
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  formatCurrency,
+  formatRelativeDay,
+  formatTime,
+  transactionTitle,
+} from "./lib/format";
+import { useTransactionsQuery } from "./lib/queries/useTransactions";
 
 type ConfettiBit = {
   color: string;
@@ -29,6 +36,37 @@ const CONFETTI: ConfettiBit[] = [
 
 export default function SuccessScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ txnId?: string }>();
+  const { data: txns } = useTransactionsQuery();
+  const txn = txns?.find((t) => t.id === params.txnId) ?? null;
+
+  const amountLabel = txn
+    ? `${formatCurrency(txn.amount, txn.currency)} ${
+        txn.type === "TOPUP"
+          ? "added"
+          : txn.type === "WITHDRAW"
+          ? "withdrawn"
+          : txn.type === "SEND"
+          ? "sent"
+          : "received"
+      }`
+    : "—";
+
+  const recipientLine = txn
+    ? txn.type === "TOPUP" || txn.type === "WITHDRAW"
+      ? txn.bankAccount
+        ? `${txn.type === "TOPUP" ? "from" : "to"} ${
+            txn.bankAccount.institutionName
+          } ··${txn.bankAccount.lastFour}`
+        : (txn.counterpartyName ?? "")
+      : txn.counterpartyName
+      ? `${txn.type === "SEND" ? "to" : "from"} ${txn.counterpartyName}`
+      : ""
+    : "";
+
+  const dateLabel = txn
+    ? `${formatRelativeDay(txn.createdAt)} · ${formatTime(txn.createdAt)}`
+    : "—";
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
@@ -68,13 +106,21 @@ export default function SuccessScreen() {
           </View>
         </View>
 
-        <Text style={styles.amount}>$45.00 sent</Text>
-        <Text style={styles.recipient}>to Daniel Mensah · @dmensah</Text>
+        <Text style={styles.amount}>{amountLabel}</Text>
+        {recipientLine ? (
+          <Text style={styles.recipient}>{recipientLine}</Text>
+        ) : null}
 
         <View style={styles.receipt}>
-          <ReceiptRow label="Transaction ID" value="TX-9F4A12" />
-          <ReceiptRow label="Note" value="Dinner last night 🍕" />
-          <ReceiptRow label="Date" value="Today · 9:41 AM" />
+          <ReceiptRow
+            label="Transaction ID"
+            value={txn ? `TX-${txn.id.slice(-6).toUpperCase()}` : "—"}
+          />
+          <ReceiptRow
+            label="Type"
+            value={txn ? transactionTitle(txn) : "—"}
+          />
+          <ReceiptRow label="Date" value={dateLabel} />
         </View>
       </View>
 

@@ -13,6 +13,17 @@ import {
 
 export const transactionsRouter = Router();
 
+const bankAccountInclude = {
+  bankAccount: {
+    select: {
+      institutionName: true,
+      lastFour: true,
+      logoColor: true,
+      logoLetter: true,
+    },
+  },
+} as const;
+
 transactionsRouter.use(requireAuth);
 
 transactionsRouter.get("/", async (req, res, next) => {
@@ -22,6 +33,7 @@ transactionsRouter.get("/", async (req, res, next) => {
       where: { userId: req.userId! },
       orderBy: { createdAt: "desc" },
       take: limit + 1,
+      include: bankAccountInclude,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     });
 
@@ -52,6 +64,7 @@ transactionsRouter.post("/send", async (req, res, next) => {
         counterpartyName: input.counterpartyName,
         status: "COMPLETED",
       },
+      include: bankAccountInclude,
     });
     res.status(201).json({ transaction: toTransactionDTO(txn) });
   } catch (err) {
@@ -65,6 +78,7 @@ async function adjustCardAndRecord(
   amount: string,
   currency: string,
   type: "TOPUP" | "WITHDRAW",
+  bankAccountId?: string,
 ) {
   return prisma.$transaction(async (tx) => {
     const card = await tx.card.findFirst({ where: { id: cardId, userId } });
@@ -73,6 +87,16 @@ async function adjustCardAndRecord(
     }
     if (card.currency !== currency) {
       throw new HttpError(400, "CURRENCY_MISMATCH", `Card currency is ${card.currency}`);
+    }
+
+    let bankAccount = null;
+    if (bankAccountId) {
+      bankAccount = await tx.bankAccount.findFirst({
+        where: { id: bankAccountId, userId },
+      });
+      if (!bankAccount) {
+        throw new HttpError(404, "BANK_ACCOUNT_NOT_FOUND", "Bank account not found");
+      }
     }
 
     const delta = new Prisma.Decimal(amount);
@@ -85,15 +109,19 @@ async function adjustCardAndRecord(
 
     await tx.card.update({ where: { id: card.id }, data: { balance: newBalance } });
 
+    const fallbackName = type === "TOPUP" ? "Top-up" : "Withdrawal";
+
     return tx.transaction.create({
       data: {
         userId,
         type,
         amount: delta,
         currency,
-        counterpartyName: type === "TOPUP" ? "Top-up" : "Withdrawal",
+        counterpartyName: bankAccount?.institutionName ?? fallbackName,
         status: "COMPLETED",
+        bankAccountId: bankAccount?.id,
       },
+      include: bankAccountInclude,
     });
   });
 }
@@ -107,6 +135,7 @@ transactionsRouter.post("/top-up", async (req, res, next) => {
       input.amount,
       input.currency,
       "TOPUP",
+      input.bankAccountId,
     );
     res.status(201).json({ transaction: toTransactionDTO(txn) });
   } catch (err) {
@@ -123,6 +152,7 @@ transactionsRouter.post("/withdraw", async (req, res, next) => {
       input.amount,
       input.currency,
       "WITHDRAW",
+      input.bankAccountId,
     );
     res.status(201).json({ transaction: toTransactionDTO(txn) });
   } catch (err) {

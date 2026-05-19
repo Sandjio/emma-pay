@@ -8,9 +8,15 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
-      - "3306:3306"
+      # Host port 3307 (3306 is taken by a local MySQL service on Windows).
+      # Inside the docker network the container still listens on 3306, so the
+      # backend service uses mysql:3306 unchanged.
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      # Runs once on first volume init: grants extra privileges so
+      # `prisma migrate dev` can create the shadow database.
+      - ./mysql-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 5s

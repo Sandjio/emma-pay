@@ -1,13 +1,19 @@
 import { AppLogo, PrimaryButton } from "@/components/ui";
 import { Colors, Spacing, Typography } from "@/constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuth } from "./lib/auth-context";
 
 export default function SplashScreen() {
   const router = useRouter();
+  const { status } = useAuth();
+
+  if (status === "authed") {
+    return <Redirect href="/home" />;
+  }
 
   return (
     <LinearGradient

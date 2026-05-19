@@ -3,7 +3,7 @@ import { Colors, Spacing } from "@/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -13,29 +13,9 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-type Contact = {
-  id: string;
-  initials: string;
-  name: string;
-  handle: string;
-  accent: string;
-};
-
-const RECENTS: Contact[] = [
-  { id: "daniel", initials: "DM", name: "Daniel", handle: "@dmensah", accent: "#DBEAFE" },
-  { id: "sofia", initials: "SR", name: "Sofia", handle: "@sofia.r", accent: "#FCE7F3" },
-  { id: "kwame", initials: "KA", name: "Kwame", handle: "@kwame", accent: "#FEF3C7" },
-];
-
-const CONTACTS: Contact[] = [
-  { id: "daniel", initials: "DM", name: "Daniel Mensah", handle: "@dmensah", accent: "#DBEAFE" },
-  { id: "sofia", initials: "SR", name: "Sofia Reyes", handle: "@sofia.r", accent: "#FCE7F3" },
-  { id: "kwame", initials: "KA", name: "Kwame Asante", handle: "@kwame", accent: "#FEF3C7" },
-  { id: "jin", initials: "JP", name: "Jin Park", handle: "@jinp", accent: "#E0E7FF" },
-  { id: "lola", initials: "LA", name: "Lola Adeyemi", handle: "@lolaade", accent: "#DCFCE7" },
-  { id: "marcus", initials: "MC", name: "Marcus Chen", handle: "@marcuschen", accent: "#FFE4E6" },
-];
+import { ApiError, ApiContact } from "./lib/api";
+import { useContactsQuery } from "./lib/queries/useContacts";
+import { useSendMutation } from "./lib/queries/useTransactions";
 
 const ACCENT_TEXT: Record<string, string> = {
   "#DBEAFE": "#1D4ED8",
@@ -46,9 +26,50 @@ const ACCENT_TEXT: Record<string, string> = {
   "#FFE4E6": "#BE123C",
 };
 
+function textColorFor(accent: string): string {
+  return ACCENT_TEXT[accent] ?? Colors.brand.blue;
+}
+
 export default function SendMoneyScreen() {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  const [amount, setAmount] = useState("10");
+  const [error, setError] = useState("");
+
+  const contactsQuery = useContactsQuery();
+  const sendMutation = useSendMutation();
+  const contacts = contactsQuery.data ?? [];
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return contacts;
+    return contacts.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) || c.handle.toLowerCase().includes(q),
+    );
+  }, [contacts, query]);
+
+  const recents = filtered.slice(0, 3);
+
+  async function handleSend(contact: ApiContact) {
+    setError("");
+    const trimmed = amount.trim();
+    if (!/^\d+(\.\d{1,2})?$/.test(trimmed) || Number(trimmed) <= 0) {
+      setError("Enter a valid amount");
+      return;
+    }
+    try {
+      const txn = await sendMutation.mutateAsync({
+        amount: trimmed,
+        currency: "USD",
+        counterpartyName: contact.name,
+        contactId: contact.id,
+      });
+      router.replace({ pathname: "/success", params: { txnId: txn.id } });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not send payment");
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
@@ -60,6 +81,21 @@ export default function SendMoneyScreen() {
           rightIcon="grid"
           onRightPress={() => {}}
         />
+      </View>
+
+      <View style={styles.amountRow}>
+        <Text style={styles.amountLabel}>Amount</Text>
+        <View style={styles.amountField}>
+          <Text style={styles.currencyPrefix}>$</Text>
+          <TextInput
+            style={styles.amountInput}
+            keyboardType="decimal-pad"
+            value={amount}
+            onChangeText={setAmount}
+            placeholder="0.00"
+            placeholderTextColor={Colors.neutral.hint}
+          />
+        </View>
       </View>
 
       <View style={styles.searchWrap}>
@@ -76,60 +112,100 @@ export default function SendMoneyScreen() {
         </View>
       </View>
 
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.sectionLabel}>RECENT</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.recentRow}
-        >
-          <View style={styles.recentItem}>
-            <View style={[styles.recentAvatar, styles.recentNew]}>
-              <Feather name="plus" size={22} color={Colors.brand.blue} />
-            </View>
-            <Text style={styles.recentName}>New</Text>
+        {contacts.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyTitle}>No contacts yet</Text>
+            <Text style={styles.emptyHint}>
+              Tap “New” to add someone you’ve paid.
+            </Text>
           </View>
-          {RECENTS.map((c) => (
-            <View key={c.id} style={styles.recentItem}>
-              <View style={[styles.recentAvatar, { backgroundColor: c.accent }]}>
-                <Text style={[styles.recentInitials, { color: ACCENT_TEXT[c.accent] }]}>
-                  {c.initials}
-                </Text>
+        ) : (
+          <>
+            <Text style={styles.sectionLabel}>RECENT</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.recentRow}
+            >
+              <View style={styles.recentItem}>
+                <View style={[styles.recentAvatar, styles.recentNew]}>
+                  <Feather name="plus" size={22} color={Colors.brand.blue} />
+                </View>
+                <Text style={styles.recentName}>New</Text>
               </View>
-              <Text style={styles.recentName}>{c.name}</Text>
-            </View>
-          ))}
-        </ScrollView>
+              {recents.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={styles.recentItem}
+                  onPress={() => handleSend(c)}
+                  disabled={sendMutation.isPending}
+                  activeOpacity={0.85}
+                >
+                  <View
+                    style={[styles.recentAvatar, { backgroundColor: c.accentColor }]}
+                  >
+                    <Text
+                      style={[
+                        styles.recentInitials,
+                        { color: textColorFor(c.accentColor) },
+                      ]}
+                    >
+                      {c.initials}
+                    </Text>
+                  </View>
+                  <Text style={styles.recentName} numberOfLines={1}>
+                    {c.name.split(" ")[0]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
 
-        <Text style={[styles.sectionLabel, styles.allContactsLabel]}>ALL CONTACTS</Text>
+            <Text style={[styles.sectionLabel, styles.allContactsLabel]}>
+              ALL CONTACTS
+            </Text>
 
-        <View style={styles.contactList}>
-          {CONTACTS.map((c) => (
-            <View key={c.id} style={styles.contactRow}>
-              <View style={[styles.contactAvatar, { backgroundColor: c.accent }]}>
-                <Text style={[styles.contactInitials, { color: ACCENT_TEXT[c.accent] }]}>
-                  {c.initials}
-                </Text>
-              </View>
-              <View style={styles.contactBody}>
-                <Text style={styles.contactName}>{c.name}</Text>
-                <Text style={styles.contactHandle}>{c.handle}</Text>
-              </View>
-              <TouchableOpacity
-                style={styles.sendPill}
-                onPress={() => router.push("/success")}
-                activeOpacity={0.85}
-                hitSlop={4}
-              >
-                <Text style={styles.sendPillText}>Send</Text>
-              </TouchableOpacity>
+            <View style={styles.contactList}>
+              {filtered.map((c) => (
+                <View key={c.id} style={styles.contactRow}>
+                  <View
+                    style={[styles.contactAvatar, { backgroundColor: c.accentColor }]}
+                  >
+                    <Text
+                      style={[
+                        styles.contactInitials,
+                        { color: textColorFor(c.accentColor) },
+                      ]}
+                    >
+                      {c.initials}
+                    </Text>
+                  </View>
+                  <View style={styles.contactBody}>
+                    <Text style={styles.contactName}>{c.name}</Text>
+                    <Text style={styles.contactHandle}>{c.handle}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.sendPill}
+                    onPress={() => handleSend(c)}
+                    disabled={sendMutation.isPending}
+                    activeOpacity={0.85}
+                    hitSlop={4}
+                  >
+                    <Text style={styles.sendPillText}>
+                      {sendMutation.isPending ? "…" : "Send"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -143,9 +219,41 @@ const styles = StyleSheet.create({
   headerWrap: {
     paddingHorizontal: Spacing.screenH,
   },
-  searchWrap: {
+  amountRow: {
     paddingHorizontal: Spacing.screenH,
     paddingTop: 4,
+    gap: 6,
+  },
+  amountLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: Colors.neutral.hint,
+    letterSpacing: 0.6,
+  },
+  amountField: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
+  },
+  currencyPrefix: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.neutral.dark,
+  },
+  amountInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "600",
+    color: Colors.neutral.dark,
+    padding: 0,
+  },
+  searchWrap: {
+    paddingHorizontal: Spacing.screenH,
+    paddingTop: 12,
     paddingBottom: 12,
   },
   searchBar: {
@@ -162,6 +270,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.neutral.dark,
     padding: 0,
+  },
+  errorText: {
+    fontSize: 13,
+    color: Colors.neutral.errorText,
+    paddingHorizontal: Spacing.screenH,
+    paddingBottom: 6,
   },
   scroll: {
     flex: 1,
@@ -257,5 +371,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: Colors.brand.blue,
+  },
+  emptyWrap: {
+    alignItems: "center",
+    paddingTop: 60,
+    gap: 6,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.neutral.dark,
+  },
+  emptyHint: {
+    fontSize: 13,
+    color: Colors.neutral.hint,
   },
 });

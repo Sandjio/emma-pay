@@ -1,9 +1,9 @@
 import { PrimaryButton, ScreenHeader } from "@/components/ui";
 import { Colors, Spacing } from "@/constants/theme";
-import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -12,21 +12,71 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-const AVAILABLE_BALANCE = 12480.32;
+import { ApiError } from "./lib/api";
+import { formatCurrency as fmtCurrency } from "./lib/format";
+import { useBankAccountsQuery } from "./lib/queries/useBankAccounts";
+import { useCardsQuery } from "./lib/queries/useCards";
+import { useWithdrawMutation } from "./lib/queries/useTransactions";
+import { sumCardBalances } from "./lib/summarize";
 
 export default function WithdrawScreen() {
   const router = useRouter();
   const [amount, setAmount] = useState<number>(500);
+  const [bankId, setBankId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  const cardsQuery = useCardsQuery();
+  const banksQuery = useBankAccountsQuery();
+  const withdraw = useWithdrawMutation();
+
+  const cards = cardsQuery.data ?? [];
+  const banks = banksQuery.data ?? [];
+  const primaryCard = cards[0];
+  const available = useMemo(() => sumCardBalances(cards), [cards]);
+  const selectedBank = banks.find((b) => b.id === bankId);
+
+  useEffect(() => {
+    if (!bankId && banks.length > 0) {
+      const primary = banks.find((b) => b.isPrimary) ?? banks[0];
+      setBankId(primary.id);
+    }
+  }, [banks, bankId]);
+
+  useEffect(() => {
+    if (amount > available && available > 0) {
+      setAmount(Math.floor(available));
+    }
+  }, [available, amount]);
 
   const integer = Math.floor(amount).toString();
   const decimals = (amount % 1).toFixed(2).slice(2);
+  const fixed = `${integer}.${decimals}`;
 
-  function formatCurrency(value: number) {
-    return `$${value.toLocaleString("en-US", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
+  async function handleWithdraw() {
+    setError("");
+    if (!primaryCard) {
+      setError("You need a card to withdraw from");
+      return;
+    }
+    if (!bankId) {
+      setError("Link a bank to receive your withdrawal");
+      return;
+    }
+    if (amount > available) {
+      setError("Amount exceeds available balance");
+      return;
+    }
+    try {
+      const txn = await withdraw.mutateAsync({
+        amount: fixed,
+        currency: primaryCard.currency,
+        cardId: primaryCard.id,
+        bankAccountId: bankId,
+      });
+      router.replace({ pathname: "/success", params: { txnId: txn.id } });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not withdraw");
+    }
   }
 
   return (
@@ -50,49 +100,67 @@ export default function WithdrawScreen() {
 
         <TouchableOpacity
           style={styles.availablePill}
-          onPress={() => setAmount(AVAILABLE_BALANCE)}
+          onPress={() => setAmount(available)}
           activeOpacity={0.85}
         >
           <Text style={styles.availableText}>
-            Available {formatCurrency(AVAILABLE_BALANCE)} ·{" "}
+            Available {fmtCurrency(available)} ·{" "}
             <Text style={styles.availableAction}>Withdraw all</Text>
           </Text>
         </TouchableOpacity>
 
         <Text style={styles.sectionLabel}>Send to</Text>
 
-        <TouchableOpacity style={styles.bankCard} activeOpacity={0.85}>
-          <View style={styles.bankIcon}>
-            <MaterialCommunityIcons
-              name="bank-outline"
-              size={22}
-              color={Colors.brand.deepBlue}
-            />
+        {banks.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No bank linked</Text>
+            <Text style={styles.emptyHint}>
+              Link a bank account to receive withdrawals.
+            </Text>
+            <TouchableOpacity
+              style={styles.emptyCta}
+              onPress={() => router.push("/link-bank")}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.emptyCtaText}>Link a bank</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.bankBody}>
-            <Text style={styles.bankName}>Bank of America</Text>
-            <Text style={styles.bankDetail}>Checking · **8847</Text>
-          </View>
-          <Feather name="chevron-right" size={20} color={Colors.neutral.hint} />
-        </TouchableOpacity>
+        ) : selectedBank ? (
+          <TouchableOpacity style={styles.bankCard} activeOpacity={0.85}>
+            <View style={[styles.bankIcon, { backgroundColor: selectedBank.logoColor }]}>
+              <Text style={styles.bankIconText}>{selectedBank.logoLetter}</Text>
+            </View>
+            <View style={styles.bankBody}>
+              <Text style={styles.bankName}>{selectedBank.institutionName}</Text>
+              <Text style={styles.bankDetail}>
+                {selectedBank.accountType === "SAVINGS" ? "Savings" : "Checking"} ·
+                **{selectedBank.lastFour}
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={Colors.neutral.hint} />
+          </TouchableOpacity>
+        ) : null}
 
         <View style={styles.summary}>
-          <SummaryRow label="Amount" value={formatCurrency(amount)} />
+          <SummaryRow label="Amount" value={fmtCurrency(amount)} />
           <SummaryRow label="Fee" value="Free" />
           <SummaryRow label="Arrives" value="Tomorrow by 5pm" />
           <View style={styles.divider} />
           <SummaryRow
             label="You'll receive"
-            value={formatCurrency(amount)}
+            value={fmtCurrency(amount)}
             emphasized
           />
         </View>
+
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </ScrollView>
 
       <View style={styles.footer}>
         <PrimaryButton
-          label="Withdraw to bank"
-          onPress={() => router.back()}
+          label={withdraw.isPending ? "Withdrawing…" : "Withdraw to bank"}
+          onPress={handleWithdraw}
+          disabled={withdraw.isPending || banks.length === 0 || !primaryCard}
         />
       </View>
     </SafeAreaView>
@@ -206,9 +274,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: "#F0F2F8",
     alignItems: "center",
     justifyContent: "center",
+  },
+  bankIconText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
   bankBody: {
     flex: 1,
@@ -222,6 +294,40 @@ const styles = StyleSheet.create({
   bankDetail: {
     fontSize: 12,
     color: Colors.neutral.hint,
+  },
+  emptyCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: Colors.neutral.divider,
+    padding: 16,
+    gap: 8,
+    alignItems: "center",
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.neutral.dark,
+  },
+  emptyHint: {
+    fontSize: 13,
+    color: Colors.neutral.hint,
+    textAlign: "center",
+  },
+  emptyCta: {
+    marginTop: 6,
+    paddingHorizontal: 16,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: Colors.brand.blue,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyCtaText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   summary: {
     width: "100%",
@@ -258,6 +364,12 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: Colors.neutral.divider,
+  },
+  errorText: {
+    fontSize: 13,
+    color: Colors.neutral.errorText,
+    alignSelf: "flex-start",
+    marginTop: 12,
   },
   footer: {
     paddingHorizontal: Spacing.screenH,
